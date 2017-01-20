@@ -1,0 +1,68 @@
+#######################################################################################################
+#= AUTOFLOW TEMPLATE findRGs
+#######################################################################################################
+#= Detecting candidate reference genes from NGS data 
+#= INPUT = a read count table and a tab-delimited annotation table (optional)
+#= Author = Rosario Carmona
+
+#######################################################################################################
+# Declaring variables
+#######################################################################################################
+#$input_file=
+#$min_reads=
+#$cv_filter=
+#$annot=
+#######################################################################################################
+
+filter_coef_var_$cv_filter){
+
+	filter_reads_$min_reads){
+		module load ruby
+		?
+		
+		#Normalize by RPMM (reads per mapped million)
+		rpmm_itera.rb $input_file > rpmm_table
+		#Filter by minimum counted reads
+		min_reads.rb -f $input_file -m (*) > genes_filtered
+		#Link filtered genes and rpmm
+		table_linker.rb rpmm_table genes_filtered final_rpmm
+		#Calculate coefficient of variation and filters
+		coef_vari.rb -t final_rpmm -c filter_coef_var_(+) > coef_var_table
+		
+		
+		if [ "$annot" ]
+			
+			#If annotation file exists
+			then
+			#Prepare input for filtering
+			table_header.rb -t coef_var_table -c 0,2 > gen_rpmm_table
+			table_linker.rb $annot gen_rpmm_table gen_rpmm_annot
+			#Filter by best ortholog
+			extract_best.rb gen_rpmm_annot > uniq_ort_table
+			table_linker.rb coef_var_table uniq_ort_table final_table
+
+			#Extract list of orthologs for intersections
+			table_header.rb -t final_table -c 1 > genes_list
+			
+			#If annotation file doesn't exist
+			else
+			table_header.rb -t coef_var_table -c 0 > genes_list
+		
+		fi		
+
+	}
+
+    #Node of intersections
+	venn){
+		module load R/3.0.2
+		#Prepare file paths
+		files_list=`echo !filter_reads_!/genes_list |sed 's/ /,/g'`
+
+		#Prepare set names
+		set_names=`echo "$min_reads"| sed 's/\(\[\)\|\(\]\)//g'| sed 's/;/\n/g'| sed 's/$/_reads/'| sed ':a;N;$!ba;s/\n/,/g'`
+		?
+		script_venn.R -f $files_list -n $set_names	
+			
+	}
+
+}
